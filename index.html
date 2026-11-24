@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F4F4F4">
+<meta name="color-scheme" content="light only">
+<meta name="description" content="A colour wheel for matching colours, palettes you can save and share, and colours taken from your photos.">
+<title>Sfumato</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<main id="app"></main>
+
+<nav class="tabs" id="tabs">
+  <button data-act="tab" data-tab="wheel" id="tab-wheel"></button>
+  <button data-act="tab" data-tab="photo" id="tab-photo"></button>
+  <button data-act="tab" data-tab="palettes" id="tab-palettes"></button>
+</nav>
+
+<input type="file" id="photo-file" accept="image/*" hidden>
+<dialog id="sheet" class="sheet"></dialog>
+<div id="toast" class="toast" role="status" hidden></div>
+
+<script src="lang.js"></script>
+<script src="facts.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
