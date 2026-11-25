@@ -1,5 +1,5 @@
 // Bump VERSION whenever any app file changes, so phones download the new version.
-const VERSION = 'v2';
+const VERSION = 'v3';
 const CACHE = 'sfumato-' + VERSION;
 const ASSETS = [
   './',
@@ -7,6 +7,7 @@ const ASSETS = [
   'styles.css',
   'lang.js',
   'facts.js',
+  'learn.js',
   'app.js',
   'manifest.webmanifest',
   'icons/icon.svg',

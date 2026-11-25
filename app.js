@@ -23,8 +23,10 @@ const pad = n => String(n).padStart(2, '0');
 const todayKey = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
 
 /* ---------- Colour maths ---------- */
-/* Painter's wheel (red, yellow, blue): wheel angle ↔ screen hue, so opposite red is green */
-const RYB = [[0, 0], [60, 30], [120, 55], [180, 120], [240, 225], [300, 275], [360, 360]];
+/* Painter's wheel (red, yellow, blue): wheel angle ↔ screen hue, so opposite red is green.
+   One anchor for each of Itten's 12 colours, every 30°: red, red-orange, orange, yellow-orange, yellow,
+   yellow-green, green, blue-green, blue, blue-violet, violet, red-violet. */
+const RYB = [[0, 0], [30, 15], [60, 30], [90, 45], [120, 60], [150, 90], [180, 120], [210, 190], [240, 222], [270, 255], [300, 280], [330, 320], [360, 360]];
 function lerpTable(x, from, to) {
   x = mod360(x);
   for (let i = 1; i < RYB.length; i++) {
@@ -55,22 +57,33 @@ const hexToRgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
 const inkOn = hex => { const [r, g, b] = hexToRgb(hex); return (0.299 * r + 0.587 * g + 0.114 * b) > 150 ? '#1E1E1E' : '#FFFFFF'; };
 
 /* ---------- Settings ---------- */
+/* Ways of matching colours: the main colour is always at 0°, the others at these offsets */
 const HARMONIES = [
   { key: 'opposite', offs: [0, 180] },
   { key: 'neighbours', offs: [0, -30, 30] },
+  { key: 'wideNeighbours', offs: [0, -30, 30, -60, 60] },
   { key: 'triad', offs: [0, 120, 240] },
   { key: 'split', offs: [0, 150, 210] },
+  { key: 'narrowTriangle', offs: [0, 165, 195] },
   { key: 'square', offs: [0, 90, 180, 270] },
   { key: 'rectangle', offs: [0, 60, 180, 240] },
-  { key: 'shades', offs: [0] },
+  { key: 'doubleSplit', offs: [0, -30, 30, 150, 210] },
+  { key: 'hexagon', offs: [0, 60, 120, 180, 240, 300] },
+  { key: 'lightDark', offs: [0] },
 ];
+/* Version 1 saved the harmony as a number in its shorter list */
+const OLD_HARMONIES = ['opposite', 'neighbours', 'triad', 'split', 'square', 'rectangle', 'lightDark'];
+const harmonyIndex = key => Math.max(0, HARMONIES.findIndex(h => h.key === key));
 function cleanSettings(s) {
   s = s && typeof s === 'object' ? s : {};
   const num = (v, a, b, d) => (typeof v === 'number' && v >= a && v <= b ? v : d);
+  const key = typeof s.harmonyKey === 'string' && HARMONIES.some(h => h.key === s.harmonyKey) ? s.harmonyKey
+    : Number.isInteger(s.harmony) && OLD_HARMONIES[s.harmony] ? OLD_HARMONIES[s.harmony] : 'opposite';
   return {
     lang: s.lang === 'en' || s.lang === 'it' ? s.lang : null,
     mode: s.mode === 'screen' ? 'screen' : 'painter',
-    harmony: Number.isInteger(s.harmony) && s.harmony >= 0 && s.harmony < HARMONIES.length ? s.harmony : 0,
+    harmonyKey: key,
+    ldRow: Number.isInteger(s.ldRow) && s.ldRow >= 0 && s.ldRow <= 2 ? s.ldRow : 0,
     a: num(s.a, 0, 360, 0),
     s: num(s.s, 0, 1, 0.8),
     v: num(s.v, 0.05, 1, 0.9),
@@ -120,14 +133,19 @@ function savePalettes() {
 const paletteById = id => palettes.find(p => p.id === id);
 
 /* ---------- The wheel's current colours ---------- */
+const harmony = () => HARMONIES[harmonyIndex(settings.harmonyKey)];
+/* Light and dark: the main colour mixed with white (tints), grey (tones) or black (shades), from pale to pure */
+const LD_MIX = [[255, 255, 255], [128, 128, 128], [0, 0, 0]];
+const LD_STEPS = [0.15, 0.32, 0.49, 0.66, 0.83, 1];
+function lightDarkRow(row) {
+  const base = hsvToRgb(angleToHue(settings.a), settings.s, settings.v);
+  const from = LD_MIX[row];
+  return LD_STEPS.map(t => rgbToHex(from.map((x, i) => Math.round(x + (base[i] - x) * t))));
+}
 function wheelColours() {
   const { a, s, v } = settings;
-  if (HARMONIES[settings.harmony].key === 'shades') {
-    const h = angleToHue(a);
-    return [[s * 0.3, Math.min(1, v + 0.1)], [s * 0.65, v], [s, v], [s, v * 0.7], [s, v * 0.45]]
-      .map(([ss, vv]) => rgbToHex(hsvToRgb(h, ss, vv)));
-  }
-  return HARMONIES[settings.harmony].offs.map(o => rgbToHex(hsvToRgb(angleToHue(a + o), s, v)));
+  if (harmony().key === 'lightDark') return lightDarkRow(settings.ldRow);
+  return harmony().offs.map(o => rgbToHex(hsvToRgb(angleToHue(a + o), s, v)));
 }
 
 /* ---------- Navigation: each page is a history entry, so the phone's back button works ---------- */
@@ -164,12 +182,13 @@ function render() {
   if (name === 'wheel') { app.innerHTML = wheelHtml(); tab = 'wheel'; }
   else if (name === 'photo') { app.innerHTML = photoHtml(); tab = 'photo'; }
   else if (name === 'palettes') { app.innerHTML = palettesHtml(); tab = 'palettes'; }
+  else if (name === 'learn') { app.innerHTML = learnHtml(); tab = 'learn'; }
   else if (name === 'palette' && paletteById(arg)) app.innerHTML = paletteHtml(paletteById(arg));
   else if (name === 'menu') app.innerHTML = menuHtml();
   else { back(); return; }
   lastKey = key;
   $('#tabs').hidden = !tab;
-  ['wheel', 'photo', 'palettes'].forEach(t => {
+  ['wheel', 'photo', 'palettes', 'learn'].forEach(t => {
     const b = $('#tab-' + t);
     b.textContent = tr('tab' + t[0].toUpperCase() + t.slice(1));
     b.setAttribute('aria-current', tab === t ? 'page' : 'false');
@@ -187,18 +206,19 @@ const creditHtml = () => `<footer class="credit">
 const topbar = title => `<header class="topbar"><h1>${esc(title)}</h1>
   <button class="icon-btn" data-act="menu" aria-label="${tr('menu')}">${menuIcon}</button></header>`;
 
-/* Small picture of a harmony: a dotted ring with the dots where the matching colours sit */
-function harmonyIcon(offs, isShades) {
+/* Small picture of a harmony: a dotted ring with the dots where the matching colours sit.
+   Light and dark gets a circle that is half white, half dark instead. */
+function harmonyIcon(offs, isLightDark) {
+  if (isLightDark) return '<svg viewBox="0 0 28 28" aria-hidden="true"><circle cx="14" cy="14" r="10" class="ring"/><circle cx="14" cy="14" r="6.5" class="line"/><path d="M14 7.5a6.5 6.5 0 0 1 0 13z" class="pt"/></svg>';
   const pts = offs.map(d => { const r = (d - 90) * Math.PI / 180; return [14 + 10 * Math.cos(r), 14 + 10 * Math.sin(r)]; });
   let s = '<svg viewBox="0 0 28 28" aria-hidden="true"><circle cx="14" cy="14" r="10" class="ring"/>';
-  if (isShades) s += '<circle cx="14" cy="14" r="3.2" class="line"/><circle cx="14" cy="14" r="6.5" class="line"/>';
   pts.forEach(p => { s += `<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="2.4" class="pt"/>`; });
   return s + '</svg>';
 }
 
 /* ---------- Wheel ---------- */
 function wheelHtml() {
-  const h = HARMONIES[settings.harmony];
+  const h = harmony();
   ui.wheelSize = Math.round(Math.min(320, Math.max(220, innerWidth - 64)));
   return `<div class="view with-tabs">
     ${topbar(tr('appName'))}
@@ -206,8 +226,9 @@ function wheelHtml() {
       <button data-act="mode" data-mode="painter" aria-pressed="${settings.mode === 'painter'}">${tr('painter')}</button>
       <button data-act="mode" data-mode="screen" aria-pressed="${settings.mode === 'screen'}">${tr('screen')}</button>
     </div>
-    <div class="harmonies" role="group" aria-label="${tr('harmony')}">
-      ${HARMONIES.map((x, i) => `<button data-act="harmony" data-i="${i}" aria-label="${tr(x.key)}" aria-pressed="${i === settings.harmony}">${harmonyIcon(x.offs, x.key === 'shades')}</button>`).join('')}
+    <p class="mode-note">${tr(settings.mode === 'painter' ? 'painterNote' : 'screenNote')}</p>
+    <div class="harmonies" id="harmonies" role="group" aria-label="${tr('harmony')}">
+      ${HARMONIES.map(x => `<button data-act="harmony" data-key="${x.key}" aria-label="${tr(x.key)}" aria-pressed="${x.key === h.key}">${harmonyIcon(x.offs, x.key === 'lightDark')}</button>`).join('')}
     </div>
     <p class="harmony-name">${tr(h.key)}</p>
     <div class="wheel" id="wheel" style="width:${ui.wheelSize}px;height:${ui.wheelSize}px" role="slider" aria-label="${tr('wheelLabel')}" tabindex="0">
@@ -220,6 +241,7 @@ function wheelHtml() {
       <input type="range" id="bright" min="5" max="100" step="1" value="${Math.round(settings.v * 100)}">
       <span class="bright-end">${tr('bright')}</span>
     </label>
+    ${h.key === 'lightDark' ? '<div class="ld" id="ld"></div>' : ''}
     <div class="swatches" id="swatches"></div>
     <p class="hint">${tr('tapToCopy')}</p>
     <button class="btn primary wide" data-act="save-wheel">${tr('savePalette')}</button>
@@ -281,18 +303,19 @@ function paintSelection() {
   const svg = $('#wheel-dots');
   if (!svg) return;
   const size = ui.wheelSize, c = size / 2, R = c - 1;
-  const h = HARMONIES[settings.harmony];
+  const h = harmony();
   const cols = wheelColours();
   const pos = off => { const r = (settings.a + off - 90) * Math.PI / 180; return [c + R * settings.s * Math.cos(r), c + R * settings.s * Math.sin(r)]; };
   let out = '';
-  const offs = h.key === 'shades' ? [0] : h.offs;
+  const isLD = h.key === 'lightDark';
   /* Matching dots first, then the main dot on top */
-  offs.slice(1).forEach((o, i) => {
+  if (!isLD) h.offs.slice(1).forEach((o, i) => {
     const [x, y] = pos(o);
     out += `<circle cx="${x}" cy="${y}" r="10.5" class="dot-ring"/><circle cx="${x}" cy="${y}" r="9" fill="${cols[i + 1]}" class="dot"/>`;
   });
   const [mx, my] = pos(0);
-  const mainCol = h.key === 'shades' ? cols[2] : cols[0];
+  const mainCol = rgbToHex(hsvToRgb(angleToHue(settings.a), settings.s, settings.v));
+  if (isLD) paintLightDark();
   out += `<circle cx="${mx}" cy="${my}" r="15.5" class="dot-ring"/><circle cx="${mx}" cy="${my}" r="14" fill="${mainCol}" class="dot"/>`;
   svg.innerHTML = out;
   $('#swatches').innerHTML = cols.map(hex => `<button class="swatch" data-act="copy" data-hex="${hex}">
@@ -301,7 +324,22 @@ function paintSelection() {
   if (range) range.style.setProperty('--track', `linear-gradient(90deg, #000, ${rgbToHex(hsvToRgb(angleToHue(settings.a), settings.s, 1))})`);
   $('#wheel').setAttribute('aria-valuetext', cols.join(', '));
 }
+/* Light and dark: a grey column from white to black, and three rows from the grey to the chosen colour */
+function paintLightDark() {
+  const box = $('#ld');
+  if (!box) return;
+  const greys = Array.from({ length: 12 }, (_, i) => { const g = Math.round(255 * (1 - i / 11)); return `<i style="background:rgb(${g},${g},${g})"></i>`; }).join('');
+  const rows = [['tints', 'plusWhite'], ['tones', 'plusGrey'], ['shades', 'plusBlack']].map(([name, hint], r) => `
+    <button class="ld-row" data-act="ld-row" data-row="${r}" aria-pressed="${settings.ldRow === r}">
+      <span class="ld-cells">${lightDarkRow(r).map(c => `<i style="background:${c}"></i>`).join('')}</span>
+      <span class="ld-name"><b>${tr(name)}</b>${tr(hint)}</span>
+    </button>`).join('');
+  box.innerHTML = `<div class="ld-greys" aria-hidden="true">${greys}</div><div class="ld-rows">${rows}</div>`;
+}
 function setupWheel() {
+  /* Keep the chosen picture button in view in the sideways row */
+  const on = $('#harmonies [aria-pressed="true"]');
+  if (on) on.scrollIntoView({ block: 'nearest', inline: 'center' });
   drawWheel();
   paintSelection();
   const wheel = $('#wheel');
@@ -646,6 +684,93 @@ function setupPhoto() {
   box.addEventListener('pointercancel', stop);
 }
 
+/* ---------- Learn: colour theory and the physics of light ---------- */
+/* An approximate screen colour for a wavelength of light, for drawing the spectrum strip */
+function wavelengthRgb(w) {
+  let r = 0, g = 0, b = 0;
+  if (w < 440) { r = (440 - w) / 60; b = 1; }
+  else if (w < 490) { g = (w - 440) / 50; b = 1; }
+  else if (w < 510) { g = 1; b = (510 - w) / 20; }
+  else if (w < 580) { r = (w - 510) / 70; g = 1; }
+  else if (w < 645) { r = 1; g = (645 - w) / 65; }
+  else r = 1;
+  /* The eye is less sensitive at both ends, so the strip fades there */
+  const f = w < 420 ? 0.3 + 0.7 * (w - 380) / 40 : w > 700 ? 0.3 + 0.7 * (750 - w) / 50 : 1;
+  return `rgb(${Math.round(255 * r * f)},${Math.round(255 * g * f)},${Math.round(255 * b * f)})`;
+}
+function primaryWheelSvg() {
+  const C = 60, R = 56, r0 = 36, mode = settings.mode;
+  settings.mode = 'painter';
+  let s = '';
+  for (let i = 0; i < 12; i++) {
+    const a = i * 30, t1 = (a - 15 - 90) * Math.PI / 180, t2 = (a + 15 - 90) * Math.PI / 180;
+    const p = (r, t) => `${(C + r * Math.cos(t)).toFixed(1)},${(C + r * Math.sin(t)).toFixed(1)}`;
+    s += `<path d="M${p(r0, t1)}L${p(R, t1)}A${R},${R} 0 0 1 ${p(R, t2)}L${p(r0, t2)}A${r0},${r0} 0 0 0 ${p(r0, t1)}Z" fill="${rgbToHex(hsvToRgb(angleToHue(a), 0.9, 0.95))}" stroke="#fff" stroke-width="1"/>`;
+  }
+  settings.mode = mode;
+  const pt = a => { const t = (a - 90) * Math.PI / 180; return `${(C + 30 * Math.cos(t)).toFixed(1)},${(C + 30 * Math.sin(t)).toFixed(1)}`; };
+  s += `<polygon points="${pt(0)} ${pt(120)} ${pt(240)}" fill="none" stroke="#1E1E1E" stroke-width="1.8"/>`;
+  s += `<polygon points="${pt(60)} ${pt(180)} ${pt(300)}" fill="none" stroke="#1E1E1E" stroke-width="1.2" stroke-dasharray="3 2.5"/>`;
+  return `<svg viewBox="0 0 120 120" class="learn-wheel" aria-hidden="true">${s}</svg>`;
+}
+function spectrumSvg(L) {
+  let s = '';
+  for (let w = 380; w <= 750; w += 2) s += `<rect x="${((w - 380) / 370 * 300).toFixed(1)}" y="0" width="2.2" height="28" fill="${wavelengthRgb(w)}"/>`;
+  [400, 500, 600, 700].forEach(w => {
+    const x = (w - 380) / 370 * 300;
+    s += `<line x1="${x}" x2="${x}" y1="28" y2="33" stroke="#6B6B6B"/><text x="${x}" y="44" text-anchor="middle" class="ax">${w} nm</text>`;
+  });
+  s += `<text x="0" y="58" class="ax">← ${esc(L.ultraviolet)}</text><text x="300" y="58" text-anchor="end" class="ax">${esc(L.infrared)} →</text>`;
+  return `<svg viewBox="0 0 300 62" class="learn-spectrum" aria-hidden="true">${s}</svg>`;
+}
+function learnHtml() {
+  const L = LEARN[lang];
+  const src = t => `<p class="learn-src">${L.sources}: ${esc(t)}</p>`;
+  const swatch = cs => cs.map(c => `<i style="background:${c}"></i>`).join('');
+  return `<div class="view with-tabs learn">
+    ${topbar(L.title)}
+    <p class="learn-intro">${esc(L.intro)}</p>
+    <section class="learn-sec">
+      <h3>1 · ${esc(L.primaryTitle)}</h3>
+      <div class="learn-row">${primaryWheelSvg()}<p>${esc(L.primaryText)}</p></div>
+      <p class="learn-key">${esc(L.primaryKey)}</p>
+      ${src(L.primarySrc)}
+    </section>
+    <section class="learn-sec">
+      <h3>2 · ${esc(L.warmTitle)}</h3>
+      <div class="warmcool">
+        <div><span class="wc-dots">${swatch(['#E62E2E', '#E6772E', '#E6C02E'])}</span><span>${esc(L.warm)}</span></div>
+        <div><span class="wc-dots">${swatch(['#3DA34A', '#2E65E6', '#7F3DC8'])}</span><span>${esc(L.cool)}</span></div>
+      </div>
+      <p>${esc(L.warmText)}</p>
+      ${src(L.warmSrc)}
+    </section>
+    <section class="learn-sec">
+      <h3>3 · ${esc(L.lightTitle)}</h3>
+      ${spectrumSvg(L)}
+      <p>${esc(L.lightText)}</p>
+      ${src(L.lightSrc)}
+    </section>
+    <section class="learn-sec">
+      <h3>4 · ${esc(L.mixTitle)}</h3>
+      <div class="mixes">
+        <figure><svg viewBox="0 0 100 86" class="mix light" aria-hidden="true"><g><circle cx="38" cy="34" r="22" fill="#FF0000"/><circle cx="62" cy="34" r="22" fill="#00FF00"/><circle cx="50" cy="54" r="22" fill="#0000FF"/></g></svg><figcaption>${esc(L.mixLight)}</figcaption></figure>
+        <figure><svg viewBox="0 0 100 86" class="mix paint" aria-hidden="true"><g><circle cx="38" cy="34" r="22" fill="#00FFFF"/><circle cx="62" cy="34" r="22" fill="#FF00FF"/><circle cx="50" cy="54" r="22" fill="#FFFF00"/></g></svg><figcaption>${esc(L.mixPaint)}</figcaption></figure>
+      </div>
+      <p>${esc(L.mixText)}</p>
+      ${src(L.mixSrc)}
+    </section>
+    <section class="learn-sec">
+      <h3>5 · ${esc(L.harmTitle)}</h3>
+      <p>${esc(L.harmText)}</p>
+      <ul class="harm-list">${HARMONIES.map(h => `<li><span class="harm-ic">${harmonyIcon(h.offs, h.key === 'lightDark')}</span>
+        <span><b>${tr(h.key)}</b> · ${esc(L.harm[h.key])}</span></li>`).join('')}</ul>
+      ${src(L.harmSrc)}
+    </section>
+    ${creditHtml()}
+  </div>`;
+}
+
 /* ---------- Menu: language, backup ---------- */
 function menuHtml() {
   const last = settings.lastBackup ? ' ' + tr('backupLast', new Date(settings.lastBackup + 'T12:00').toLocaleDateString(locale(), { dateStyle: 'medium' })) : '';
@@ -728,10 +853,16 @@ document.addEventListener('click', ev => {
       break;
     }
     case 'harmony':
-      settings.harmony = Number(b.dataset.i) || 0;
-      showFactFor(HARMONIES[settings.harmony].key);
+      settings.harmonyKey = HARMONIES.some(h => h.key === b.dataset.key) ? b.dataset.key : 'opposite';
+      showFactFor(settings.harmonyKey);
       saveSettings(true);
       render();
+      break;
+    case 'ld-row':
+      settings.ldRow = clamp(Number(b.dataset.row) || 0, 0, 2);
+      saveSettings(true);
+      $('#ld').querySelectorAll('.ld-row').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+      paintSelection();
       break;
     case 'next-fact': nextFact(); break;
     case 'copy': copyText(b.dataset.hex, tr('copied', b.dataset.hex)); break;

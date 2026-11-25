@@ -13,7 +13,7 @@ const FACTS = [
     en: 'Your eye has three kinds of colour cells, which is why screens can fake almost any colour with just red, green and blue dots. Thomas Young proposed the idea in 1802; Helmholtz and Maxwell developed it.',
     it: 'L’occhio ha tre tipi di cellule per il colore: per questo gli schermi riescono a imitare quasi ogni colore con soli puntini rossi, verdi e blu. L’idea fu proposta da Thomas Young nel 1802 e sviluppata da Helmholtz e Maxwell.',
     src: 'NYU, perception lecture notes' },
-  { tag: 'shades',
+  { tag: 'lightDark',
     en: 'Sfumato comes from the Italian “fumo”, smoke. Leonardo advised painting “without lines”, and some shadows on the Mona Lisa are built from 20 to 30 very thin layers.',
     it: 'Sfumato viene da “fumo”. Leonardo consigliava di dipingere “senza linee”, e alcune ombre della Gioconda sono fatte di 20–30 strati sottilissimi.',
     src: 'National Gallery; ESPCI Paris, 2010' },
